@@ -2,13 +2,24 @@ import asyncio
 import time
 import multiprocessing as mp
 from contextlib import contextmanager
-from itertools import batched
+# from itertools import batched
 from concurrent.futures import ProcessPoolExecutor
 from functions import mp_count_words
 
 
-FILE_PATH = "./googlebooks-eng-all-1gram-20120701-a"
+FILE_PATH = "googlebooks-eng-all-1gram-20120701-a"
 WORD = "ära"
+
+
+def batched(iterable, n = 1):
+   current_batch = []
+   for item in iterable:
+       current_batch.append(item)
+       if len(current_batch) == n:
+           yield current_batch
+           current_batch = []
+   if current_batch:
+       yield current_batch
 
 
 @contextmanager
@@ -44,7 +55,7 @@ async def main():
     words = {}
 
     with timer("Reading file"):
-        with open(FILE_PATH, "r") as file:
+        with open(FILE_PATH, "r", encoding='utf-8') as file:
             data = file.readlines()
 
     batch_size = 60_000  # can be adjusted
