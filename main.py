@@ -1,25 +1,13 @@
 import asyncio
-import time
 import multiprocessing as mp
-from contextlib import contextmanager
-# from itertools import batched
+import time
 from concurrent.futures import ProcessPoolExecutor
-from functions import mp_count_words
+from contextlib import contextmanager
 
+from functions import mp_count_words, get_file_chunks
 
-FILE_PATH = "googlebooks-eng-all-1gram-20120701-a"
+FILE_PATH = "./googlebooks-eng-all-1gram-20120701-a"
 WORD = "ära"
-
-
-def batched(iterable, n = 1):
-   current_batch = []
-   for item in iterable:
-       current_batch.append(item)
-       if len(current_batch) == n:
-           yield current_batch
-           current_batch = []
-   if current_batch:
-       yield current_batch
 
 
 @contextmanager
@@ -39,14 +27,14 @@ def reduce_words(target: dict, source: dict) -> dict:
 
 
 async def monitoring(counter, counter_lock, total):
-    interval_seconds = 5  # can be adjusted
+    interval_seconds = .5
 
     while True:
-        # with counter_lock:
-        print(f"Progress: {counter.value}/{total}")
-        if counter.value == total:
-            break
-        await asyncio.sleep(interval_seconds)
+        with counter_lock:
+            print(f"Progress: {counter.value}/{total}")
+            if counter.value == total:
+                break
+            await asyncio.sleep(interval_seconds)
 
 
 async def main():
@@ -55,28 +43,27 @@ async def main():
     words = {}
 
     with timer("Reading file"):
-        with open(FILE_PATH, "r", encoding='utf-8') as file:
-            data = file.readlines()
-
-    batch_size = 60_000  # can be adjusted
+        cpu_count, file_chunks = get_file_chunks(FILE_PATH)
 
     with mp.Manager() as manager:
-        counter = manager.Value("i", 0)
+        counter = manager.Value("counter", 0)
         counter_lock = manager.Lock()
 
         monitoring_task = asyncio.shield(
-            asyncio.create_task(monitoring(counter, counter_lock, len(data)))
+            asyncio.create_task(monitoring(counter, counter_lock, len(file_chunks)))
         )
 
         with ProcessPoolExecutor() as executor:
             with timer("Processing data"):
                 results = []
-                for batch in batched(data, batch_size):
+                for chunk_start, chunk_end in file_chunks:
                     results.append(
                         loop.run_in_executor(
                             executor,
                             mp_count_words,
-                            batch,
+                            FILE_PATH,
+                            chunk_start,
+                            chunk_end,
                             counter,
                             counter_lock,
                         )
@@ -92,7 +79,7 @@ async def main():
 
     with timer("Printing results"):
         print("Total words: ", len(words))
-        print("Total count for word : ", words[WORD])
+        print("Total count for word : ", words.get(WORD, 0))
 
 
 if __name__ == "__main__":
